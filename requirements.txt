@@ -1,10 +1,2 @@
-import random
-import time
+Flask==3.2.2
 
-while True:
-    temperature = round(random.uniform(20, 35), 2)
-    tds = round(random.uniform(100, 800), 2)
-    turbidity = round(random.uniform(1, 50), 2)
-
-    print(f"Temperature: {temperature} °C | TDS: {tds} ppm | Turbidity: {turbidity} NTU")
-    time.sleep(2)
