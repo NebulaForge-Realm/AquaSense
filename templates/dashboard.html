@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>AquaSense Dashboard</title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap" rel="stylesheet">
+
+    <style>
+        body { 
+            margin: 0; 
+            font-family: 'Roboto', sans-serif; 
+            display: flex; 
+            height: 100vh; 
+        }
+        #map { flex: 2; position: relative; }
+        #dashboard { 
+            flex: 1; 
+            background: linear-gradient(135deg, #0077b6, #00b4d8); 
+            color: #fff; 
+            padding: 20px; 
+            display: flex; 
+            flex-direction: column; 
+            justify-content: center; 
+        }
+        h2 { text-align: center; margin-bottom: 20px; }
+        .card { 
+            background: rgba(255,255,255,0.1); 
+            margin: 10px 0; 
+            padding: 20px; 
+            border-radius: 12px; 
+            text-align: center; 
+            box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+        }
+        .value { font-size: 2em; font-weight: bold; }
+        .status-badge { 
+            font-weight: bold; 
+            padding: 6px 12px; 
+            border-radius: 12px; 
+            display: inline-block;
+        }
+        /* Legend */
+        .legend {
+    position: absolute;
+    bottom: 20px;
+    left: 20px;
+    background: rgba(255,255,255,0.9);
+    padding: 8px 12px;
+    border-radius: 8px;
+    font-weight: bold;
+    color: #000;
+    display: flex;
+    gap: 15px;
+}
+.legend span {
+    display: inline-block;
+    width: 15px; 
+    height: 15px; 
+    border-radius: 50%;
+    margin-right: 5px;
+    vertical-align: middle;
+}
+.legend-item {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+        .legend span { display: inline-block; width: 15px; height: 15px; margin-right: 5px; border-radius:50%; }
+    </style>
+</head>
+<body>
+
+<div id="map"></div>
+
+<div id="dashboard">
+    <h2>🌊 AquaSense Dashboard</h2>
+    <div class="card">
+        🌡️ Temperature: <span id="temp" class="value">--</span> °C
+    </div>
+    <div class="card">
+        💧 TDS: <span id="tds" class="value">--</span> ppm
+    </div>
+    <div class="card">
+        🌫️ Turbidity: <span id="turb" class="value">--</span> NTU
+    </div>
+    <div class="card">
+        🐠 Status: <span id="status" class="value status-badge">--</span>
+    </div>
+</div>
+
+<!-- Leaflet JS -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+    var map = L.map('map').setView([28.6139, 77.2090], 10);
+
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19
+    }).addTo(map);
+
+    var marker;
+
+    // Add clean horizontal legend
+var legend = L.control({position: 'bottomleft'});
+legend.onAdd = function (map) {
+    var div = L.DomUtil.create('div', 'legend');
+    
+    var items = [
+        {color: '#4caf50', label: 'Safe'},
+        {color: '#ff9800', label: 'Moderate'},
+        {color: '#f44336', label: 'Unsafe'}
+    ];
+    
+    items.forEach(function(item){
+        var container = L.DomUtil.create('div', 'legend-item');
+        container.innerHTML = '<span style="background:'+item.color+'"></span>'+item.label;
+        div.appendChild(container);
+    });
+
+    return div;
+};
+legend.addTo(map);
+
+
+    var marker;
+var pulseInterval;
+
+async function updateDevice() {
+    const res = await fetch('/get_device');
+    const d = await res.json();
+
+    // Update dashboard
+    document.getElementById('temp').textContent = d.temperature;
+    document.getElementById('tds').textContent = d.tds;
+    document.getElementById('turb').textContent = d.turbidity;
+
+    // Status badge color
+    let color, badgeText;
+    if(d.status === "Safe"){ 
+        color="#4caf50"; 
+        badgeText="Safe 🟢"; 
+    }
+    else if(d.status === "Moderate"){ 
+        color="#ff9800"; 
+        badgeText="Moderate 🟠"; 
+    }
+    else{ 
+        color="#f44336"; 
+        badgeText="Unsafe 🔴"; 
+    }
+    let statusBadge = document.getElementById('status');
+    statusBadge.textContent = badgeText;
+    statusBadge.style.backgroundColor = color;
+
+    // Clear existing pulse if any
+    if(pulseInterval) clearInterval(pulseInterval);
+
+    // Update or create marker
+    if(marker) {
+        marker.setLatLng([d.lat, d.lon]);
+        marker.setStyle({color: color, fillColor: color});
+        marker.setPopupContent(`
+            <b>Device ${d.id}</b><br>
+            🌡️ Temperature: ${d.temperature} °C<br>
+            💧 TDS: ${d.tds} ppm<br>
+            🌫️ Turbidity: ${d.turbidity} NTU<br>
+            🐠 Status: ${badgeText}
+        `);
+    } else {
+        marker = L.circleMarker([d.lat, d.lon], {
+            radius: 12,
+            color: color,
+            fillColor: color,
+            fillOpacity: 0.8
+        }).addTo(map);
+        marker.bindPopup(`
+            <b>Device ${d.id}</b><br>
+            🌡️ Temperature: ${d.temperature} °C<br>
+            💧 TDS: ${d.tds} ppm<br>
+            🌫️ Turbidity: ${d.turbidity} NTU<br>
+            🐠 Status: ${badgeText}
+        `).openPopup();
+    }
+
+    // Pulse animation if status is Unsafe
+    if(d.status === "Unsafe") {
+        let growing = true;
+        let radius = 12;
+        pulseInterval = setInterval(() => {
+            if(growing) radius += 0.5;
+            else radius -= 0.5;
+            if(radius >= 18) growing = false;
+            if(radius <= 12) growing = true;
+            marker.setRadius(radius);
+        }, 50);
+    }
+}
+
+
+    updateDevice();
+    setInterval(updateDevice, 5000);
+</script>
+
+</body>
+</html>
+
+
+
+
+
+
